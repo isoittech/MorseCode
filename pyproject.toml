@@ -1,0 +1,31 @@
+[project]
+name = "morse-field-station"
+version = "0.1.0"
+description = "LDAP authenticated Morse training and Codex coaching"
+requires-python = ">=3.12"
+dependencies = [
+  "fastapi==0.142.2",
+  "uvicorn==0.54.0",
+  "pydantic-settings==2.15.0",
+  "ldap3==2.9.1",
+  "ag-ui-protocol==1.0.0",
+]
+
+[dependency-groups]
+dev = [
+    "httpx2==2.13.1",
+    "pytest==9.1.1",
+    "ruff==0.16.10",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["backend/tests"]
+pythonpath = ["."]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+ignore = ["E501", "B008"]

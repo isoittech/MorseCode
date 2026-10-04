@@ -1,0 +1,33 @@
+# 設計判断
+
+## 1. 即時判定とAI指導
+
+キー押下から解放までの時間は `performance.now()` で測定し、1文字内の符号列をブラウザーで復号する。短点・長点の境界は設定速度の2単位。3単位の無音で文字を確定する。チャット入力・フォーカス喪失・タブ非表示・ポインター取消を考慮する。
+
+採点はサーバーが保持する課題と測定値で再計算する。別ユーザーの課題・期限切れの課題は受理しない。文字の挿入・欠落は編集距離で扱い、欠落一つが後続すべての誤答に変わらないようにする。打鍵精度は長短点の長さの誤差であり、文字間・単語間の精度とは区別する。パドル補助入力が混ざる場合は時間精度を返さない。
+
+AIは判定完了時、または誤入力を検出して1.4秒入力が止まった時に指導する。途中指導は1課題1回、最低15秒間隔。LLMは同期的な打鍵判定の経路に入れない。学習者からの相談は独立して送信できる。
+
+## 2. CopilotKitとFastAPI
+
+CopilotKitの公開 `v2/context` と `v2/headless` を使い、コーチの画面を専用デザインで実装する。`CopilotKitCoreReact` のローカルエージェント登録は、上位Providerの `selfManagedAgents` と同じ内部レジストリを使用する。認証・同一オリジン・レート制限はFastAPIが担当する。
+
+上位Providerからチャット全体の表示スタックを読み込むと、未使用の数式・図・コード表示も含めて配信ファイルが約18 MBになった。headlessへの変更後は1 MB未満。通常のログイン画面では訓練画面を遅延ロードする。
+
+FastAPIはAG-UIのRunAgentInputを受け、RUN_STARTED、TEXT_MESSAGE_START、TEXT_MESSAGE_CONTENT、TEXT_MESSAGE_END、RUN_FINISHEDをSSEで返す。障害時はRUN_ERRORを返し、架空のAI回答で置き換えない。
+
+## 3. Codexの状態管理と分離
+
+1回のコーチ要求に1つのApp Serverプロセスとephemeral threadを対応させる。JSON-RPCは `initialize` → `initialized` → `thread/start` → `turn/start`。ターン開始応答より先に届くテキスト通知も処理する。終了・取消・タイムアウト時はプロセスとstderr読み取りタスクを回収する。
+
+各要求は独立した新しい会話であり、前回のResponses Itemを抜き出して再送する方式ではない。今後継続threadに変更する場合は、Codex側のthreadを継続させる。reasoningやfunction_callを独自形式で再構成しない。
+
+認証済みユーザーでもホスト操作は必要ない。コーチ用設定領域、read-only sandbox、shell/unified_exec/multi_agent/apps無効、Web検索無効を組み合わせる。モデルへ返るツール・承認要求は拒否する。
+
+## 4. 保存と運用範囲
+
+初期版はLAN内の単一FastAPIプロセスとSQLite（WAL）で運用する。課題、成績、設定、セッションはユーザーIDに紐づける。セッショントークンはハッシュ保存、8時間で失効。課題は1時間で失効。採点は課題IDで一度だけ保存し、送信の再試行で重複加算しない。
+
+レート制限とAI同時実行制限はプロセス内で保持するため、複数workerへの水平拡張時は共有ストアへ移す。チャット履歴はブラウザーのメモリー内。DBスキーマはuser_version=1で初期化し、以後の変更は既存データを保つ移行を設計する。
+
+音声はWeb Audioで合成する。個別の音声ファイル、マイク、外部CDN、音声APIは不要。LAN上のHTTPでは `crypto.randomUUID` が使えないブラウザーがあるため、`crypto.getRandomValues` によるUUID生成を使う。

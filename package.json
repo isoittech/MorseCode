@@ -1,0 +1,39 @@
+{
+  "name": "morse-field-station",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "packageManager": "pnpm@10.11.1",
+  "engines": {
+    "node": ">=22.16.0"
+  },
+  "scripts": {
+    "dev": "uv run python scripts/dev.py",
+    "build": "tsc --noEmit && vite build --config frontend/vite.config.ts",
+    "typecheck": "tsc --noEmit",
+    "format": "prettier --write frontend e2e shared *.json *.ts",
+    "format:check": "prettier --check frontend e2e shared *.json *.ts",
+    "test": "vitest run",
+    "test:e2e": "playwright test",
+    "start": "uv run python scripts/manage.py start",
+    "stop": "uv run python scripts/manage.py stop",
+    "status": "uv run python scripts/manage.py status"
+  },
+  "dependencies": {
+    "@ag-ui/client": "1.0.1",
+    "@copilotkit/react-core": "1.77.0",
+    "react": "19.3.0",
+    "react-dom": "19.3.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.63.0",
+    "@types/node": "^22.19.0",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "@vitejs/plugin-react": "6.1.1",
+    "prettier": "3.9.9",
+    "typescript": "7.0.2",
+    "vite": "8.3.2",
+    "vitest": "5.0.3"
+  }
+}
