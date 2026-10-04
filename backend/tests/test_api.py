@@ -36,6 +36,7 @@ def test_all_training_and_coach_routes_require_login(client):
         assert client.get(route).status_code == 401
     assert client.post("/api/exercises/next").status_code == 401
     assert client.post("/api/coach", json={}).status_code == 401
+    assert client.post("/api/onboarding/seen").status_code == 401
 
 
 def test_session_security_logout_revocation_and_expiry(client):
@@ -159,6 +160,30 @@ def test_preferences_validate_and_control_next_exercise(client):
     assert exercise["level"] == 3
     assert not exercise["target"]
     assert "answer" not in exercise
+
+
+def test_onboarding_is_saved_per_user_without_resetting_training_preferences(client):
+    login(client)
+    first_session = client.cookies.get(COOKIE)
+    assert client.get("/api/preferences").json()["onboarding_seen"] is False
+    client.put("/api/preferences", json={"wpm": 8, "level": 2})
+    saved = client.post("/api/onboarding/seen")
+    assert saved.status_code == 200
+    assert saved.json()["onboarding_seen"] is True
+    assert saved.json()["wpm"] == 8
+    # Older clients and the settings screen only update the training fields.
+    updated = client.put("/api/preferences", json={"wpm": 15, "level": 3})
+    assert updated.json()["onboarding_seen"] is True
+    assert updated.json()["wpm"] == 15
+    assert client.post("/api/onboarding/seen").json() == updated.json()
+    assert client.post("/api/onboarding/seen", headers={"X-Morse-Client": ""}).status_code == 403
+    client.cookies.clear()
+    login(client)
+    assert client.get("/api/preferences").json()["onboarding_seen"] is False
+    client.cookies.clear()
+    client.cookies.set(COOKIE, first_session)
+    assert client.get("/api/preferences").json()["onboarding_seen"] is True
+    assert client.get("/api/stats").json()["total"] == 0
 
 
 class FakeCoach:

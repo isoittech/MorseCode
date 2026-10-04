@@ -1,11 +1,12 @@
 export type Mode = 'send' | 'receive' | 'knowledge' | 'decision';
-export type Page = Mode | 'progress' | 'reference' | 'settings';
+export type Page = Mode | 'progress' | 'reference' | 'settings' | 'introduction';
 export type User = { id: string; username: string; display_name: string; demo: boolean };
 export type Preferences = {
   wpm: number;
   level: number;
   daily_goal: number;
   target_accuracy: number;
+  onboarding_seen: boolean;
 };
 export type Exercise = {
   id: string;

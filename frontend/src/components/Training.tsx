@@ -14,6 +14,7 @@ export function Training({
   onLive,
   loading,
   targetAccuracy,
+  paused,
 }: {
   exercise: Exercise;
   result: Result | null;
@@ -23,6 +24,7 @@ export function Training({
   onLive: (signal: string) => void;
   loading: boolean;
   targetAccuracy: number;
+  paused: boolean;
 }) {
   const [audio] = useState(() => new MorseAudio());
   const [muted, setMuted] = useState(false);
@@ -37,7 +39,7 @@ export function Training({
   const started = useRef(performance.now());
   const keyer = useKeyer(
     exercise.wpm,
-    exercise.mode === 'send' && !result && !busy && !playing,
+    exercise.mode === 'send' && !result && !busy && !playing && !paused,
     audio,
   );
   const sendMode = exercise.mode === 'send';
@@ -109,6 +111,7 @@ export function Training({
   }
 
   const canSubmit =
+    !paused &&
     !busy &&
     !keyer.down &&
     !result &&
@@ -133,7 +136,7 @@ export function Training({
           LEVEL <b>0{exercise.level}</b>
         </div>
       </div>
-      <section className="mission-card">
+      <section className="mission-card" data-tour="mission">
         <header>
           <span className="eyebrow">CURRENT MISSION</span>
           <span className="tag">{exercise.title}</span>
@@ -240,7 +243,7 @@ export function Training({
               </label>
             </div>
           </header>
-          <div className="monitor-screen">
+          <div className="monitor-screen" data-tour="monitor">
             <div className="monitor-ruler">
               <span>0</span>
               <span>250</span>
@@ -292,12 +295,12 @@ export function Training({
           </div>
           {sendMode ? (
             <>
-              <div className="keyer-controls">
+              <div className="keyer-controls" data-tour="keyer">
                 <button
                   data-keyer="true"
                   aria-label="打鍵キー"
                   className={`key-pad ${keyer.down ? 'pressed' : ''}`}
-                  disabled={!!result || busy || playing}
+                  disabled={!!result || busy || playing || paused}
                   onPointerDown={(e) => {
                     if (e.button !== 0) return;
                     e.currentTarget.setPointerCapture(e.pointerId);
@@ -315,14 +318,14 @@ export function Training({
                 <div className="paddle-controls">
                   <span>補助入力</span>
                   <button
-                    disabled={!!result || busy || playing}
+                    disabled={!!result || busy || playing || paused}
                     onClick={() => keyer.paddle('.')}
                     aria-label="短点を入力"
                   >
                     ·<small>短点</small>
                   </button>
                   <button
-                    disabled={!!result || busy || playing}
+                    disabled={!!result || busy || playing || paused}
                     onClick={() => keyer.paddle('-')}
                     aria-label="長点を入力"
                   >
@@ -330,7 +333,7 @@ export function Training({
                   </button>
                   <button
                     className="commit-char"
-                    disabled={!!result || keyer.down || !keyer.current.length}
+                    disabled={!!result || keyer.down || !keyer.current.length || paused}
                     onClick={() => keyer.commit()}
                   >
                     文字確定
@@ -446,7 +449,7 @@ export function Training({
           </div>
         </div>
       )}
-      <div className="training-actions">
+      <div className="training-actions" data-tour="judge">
         <button className="button secondary" onClick={onHelp}>
           <Icon name="chat" size={15} />
           ヒントをもらう

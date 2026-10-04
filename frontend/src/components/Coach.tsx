@@ -47,11 +47,13 @@ export function Coach({
   result,
   liveSignal,
   helpRequest,
+  introductory,
 }: {
   exercise: Exercise | null;
   result: Result | null;
   liveSignal: string;
   helpRequest: number;
+  introductory: boolean;
 }) {
   const { agent, isReady } = useAgent({ agentId: 'coach' });
   const { copilotkit } = useCopilotKit();
@@ -70,6 +72,9 @@ export function Coach({
     description: '現在のモールス訓練の観測値（未確定符号を含む。測定値のみ）',
     value: {
       mode: exercise?.mode ?? null,
+      learningContext: introductory
+        ? '入門中。国際モールスの短点・長点とE/T/Aを初めて練習しています。専門用語を避けて説明してください。'
+        : null,
       prompt: exercise?.prompt ?? null,
       target: exercise?.target ?? null,
       wpm: exercise?.wpm ?? null,
@@ -219,8 +224,16 @@ export function Coach({
             <span>FIELD GUIDE</span>
             <span>操作案内</span>
           </div>
-          <p>まずは正確さから。短点と長点のリズムを身体に覚えさせよう。</p>
-          <p>打鍵の判定はすぐ表示される。迷ったときは、ここでコーチに相談できる。</p>
+          <p>
+            {introductory
+              ? 'まずはE・T・Aの3文字から。お手本を聴いて、同じリズムを試してみよう。'
+              : 'まずは正確さから。短点と長点のリズムを身体に覚えさせよう。'}
+          </p>
+          <p>
+            {introductory
+              ? '分からない言葉があれば、そのまま質問して大丈夫。入門の練習は成績に残らない。'
+              : '打鍵の判定はすぐ表示される。迷ったときは、ここでコーチに相談できる。'}
+          </p>
           <div className="guide-hint">
             <span>·</span>短点 1<span>−</span>長点 3
           </div>
@@ -277,7 +290,7 @@ export function Coach({
         )}
         <div ref={messageEnd} />
       </div>
-      <div className="coach-compose">
+      <div className="coach-compose" data-tour="coach">
         <div className="suggestions">
           <button disabled={busy} onClick={() => void send('短点と長点を安定させるコツを教えて。')}>
             打鍵のコツ

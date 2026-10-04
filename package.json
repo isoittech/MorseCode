@@ -23,7 +23,8 @@
     "@ag-ui/client": "1.0.1",
     "@copilotkit/react-core": "1.77.0",
     "react": "19.3.0",
-    "react-dom": "19.3.0"
+    "react-dom": "19.3.0",
+    "react-joyride": "3.2.0"
   },
   "devDependencies": {
     "@playwright/test": "1.63.0",

@@ -191,6 +191,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def save_preferences(payload: Preferences, user=Depends(current_user)):
         return database.preferences(user["id"], payload.model_dump())
 
+    @app.post("/api/onboarding/seen")
+    def dismiss_onboarding(user=Depends(current_user)):
+        return database.preferences(user["id"], {"onboarding_seen": True})
+
     @app.get("/api/stats")
     def stats(user=Depends(current_user)):
         return database.stats(user["id"])

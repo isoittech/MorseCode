@@ -23,6 +23,9 @@
 - Codex App Serverの `thread/start.sandbox` は `read-only`。`turn/start.sandboxPolicy.type` の `readOnly` と混同しない。
 - `turn/start` の応答より前の通知を取りこぼさない。別threadの通知を転送しない。ツール・承認要求は拒否する。
 - チャットにLDAPの認証情報やユーザープロフィールを渡さない。モデルエラーを偽の回答で隠さない。
+- 入門の打鍵はブラウザー内だけで扱い、課題・成績へ保存しない。Joyride表示中は通常の打鍵フックを停止する。
+- Joyrideはv3のnamed exportと`onEvent`を使う。ガイド対象の`data-tour`属性を保ち、画面変更時はデスクトップ・モバイルの全ステップをE2Eで確認する。
+- 初回案内の表示済み状態はユーザーの設定JSONに保存する。設定更新はJSONの部分マージとし、訓練設定の保存で表示済み状態を消さない。
 
 ## テストと注意点
 - E2Eは17632番のループバックAPIと専用DBを使用する。通常DBを消去しない。

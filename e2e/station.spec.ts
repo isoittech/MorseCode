@@ -3,6 +3,7 @@ import { expect, test, type Page } from '@playwright/test';
 async function enter(page: Page) {
   await page.goto('/');
   await page.getByRole('button', { name: '体験モードで画面を確認' }).click();
+  await page.getByRole('button', { name: '入門をスキップして訓練へ' }).click();
   await expect(page.getByRole('heading', { name: '送信訓練', exact: true })).toBeVisible();
   await page.getByRole('checkbox', { name: /判定後にAI/ }).uncheck();
 }
@@ -28,7 +29,7 @@ test('LDAP login errors remain actionable and demo sessions can log out', async 
   await page.getByRole('button', { name: 'ログインして訓練を開始' }).click();
   await expect(page.getByRole('alert')).toContainText('正しくありません');
   await page.getByRole('button', { name: '体験モードで画面を確認' }).click();
-  await expect(page.getByRole('heading', { name: '送信訓練' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'モールス信号とは？' })).toBeVisible();
   await page.getByRole('button', { name: 'ログアウト' }).click();
   await expect(page.getByRole('heading', { name: '訓練ステーションに入室' })).toBeVisible();
   expect((await page.request.get('/api/stats')).status()).toBe(401);

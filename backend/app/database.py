@@ -82,7 +82,8 @@ class Database:
         with self.connect() as db:
             if value is not None:
                 db.execute(
-                    "UPDATE users SET preferences=? WHERE id=?", (json.dumps(value), user_id)
+                    "UPDATE users SET preferences=json_patch(preferences, ?) WHERE id=?",
+                    (json.dumps(value), user_id),
                 )
             row = db.execute("SELECT preferences FROM users WHERE id=?", (user_id,)).fetchone()
         return {
@@ -90,6 +91,7 @@ class Database:
             "level": 1,
             "daily_goal": 10,
             "target_accuracy": 90,
+            "onboarding_seen": False,
             **json.loads(row["preferences"]),
         }
 

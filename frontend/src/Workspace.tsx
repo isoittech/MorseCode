@@ -1,8 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Coach, CoachProvider } from './components/Coach';
 import { Icon } from './components/Icon';
+import { Introduction } from './components/Introduction';
 import { Progress, Reference, SettingsForm } from './components/Library';
 import { Training } from './components/Training';
+import { Walkthrough } from './components/Walkthrough';
+import './components/onboarding.css';
 import { api, errorMessage } from './lib/api';
 import {
   MODE_LABELS,
@@ -23,6 +26,7 @@ const NAV: { id: Page; label: string; icon: string; tag?: string }[] = [
   { id: 'progress', label: '訓練記録', icon: 'chart' },
   { id: 'reference', label: '符号リファレンス', icon: 'grid' },
   { id: 'settings', label: '訓練設定', icon: 'settings' },
+  { id: 'introduction', label: 'はじめてのモールス', icon: 'book' },
 ];
 
 export default function Workspace({ user, onLogout }: { user: User; onLogout: () => void }) {
@@ -43,8 +47,12 @@ function Station({ user, onLogout }: { user: User; onLogout: () => void }) {
   const [loading, setLoading] = useState(true);
   const [liveSignal, setLiveSignal] = useState('');
   const [helpRequest, setHelpRequest] = useState(0);
+  const [tourActive, setTourActive] = useState(false);
+  const [tourPending, setTourPending] = useState(false);
+  const [onboardingError, setOnboardingError] = useState('');
   const requestSequence = useRef(0);
   const navRef = useRef<HTMLElement>(null);
+  const mainRef = useRef<HTMLElement>(null);
 
   const loadExercise = useCallback(async (mode: Mode) => {
     const sequence = ++requestSequence.current;
@@ -53,9 +61,12 @@ function Station({ user, onLogout }: { user: User; onLogout: () => void }) {
     setLiveSignal('');
     try {
       const next = await api<Exercise>(`/exercises/next?mode=${mode}`, { method: 'POST' });
-      if (requestSequence.current === sequence) setExercise(next);
+      if (requestSequence.current !== sequence) return false;
+      setExercise(next);
+      return true;
     } catch (e) {
       if (requestSequence.current === sequence) setError(errorMessage(e));
+      return false;
     } finally {
       if (requestSequence.current === sequence) setLoading(false);
     }
@@ -67,7 +78,13 @@ function Station({ user, onLogout }: { user: User; onLogout: () => void }) {
       const [p, s] = await Promise.all([api<Preferences>('/preferences'), api<Stats>('/stats')]);
       setPreferences(p);
       setStats(s);
-      await loadExercise('send');
+      if (p.onboarding_seen) {
+        setPage('send');
+        await loadExercise('send');
+      } else {
+        setPage('introduction');
+        setLoading(false);
+      }
     } catch (e) {
       setError(errorMessage(e));
       setLoading(false);
@@ -77,7 +94,23 @@ function Station({ user, onLogout }: { user: User; onLogout: () => void }) {
     void initialize();
   }, [initialize]);
 
+  async function saveOnboardingSeen() {
+    setOnboardingError('');
+    try {
+      await api<Preferences>('/onboarding/seen', { method: 'POST' });
+    } catch (e) {
+      setOnboardingError(
+        '案内の表示済み状態を保存できませんでした。練習は続けられます。' + errorMessage(e),
+      );
+    }
+  }
+  function rememberOnboarding() {
+    if (!preferences || preferences.onboarding_seen) return;
+    setPreferences({ ...preferences, onboarding_seen: true });
+    void saveOnboardingSeen();
+  }
   function navigate(next: Page) {
+    if (next !== 'introduction') rememberOnboarding();
     setPage(next);
     setError('');
     if (next in MODE_LABELS) void loadExercise(next as Mode);
@@ -86,7 +119,22 @@ function Station({ user, onLogout }: { user: User; onLogout: () => void }) {
       setLoading(false);
       setLiveSignal('');
     }
+    mainRef.current?.scrollTo({ top: 0 });
   }
+  async function startTour() {
+    rememberOnboarding();
+    setTourPending(true);
+    setPage('send');
+    const loaded = await loadExercise('send');
+    setTourPending(false);
+    if (loaded) setTourActive(true);
+  }
+  const endTour = useCallback(() => {
+    setTourActive(false);
+    mainRef.current?.scrollTo({ top: 0 });
+    mainRef.current?.scrollIntoView({ block: 'start' });
+    mainRef.current?.focus({ preventScroll: true });
+  }, []);
   function complete(value: Result) {
     setResult(value);
     void api<Stats>('/stats')
@@ -131,12 +179,24 @@ function Station({ user, onLogout }: { user: User; onLogout: () => void }) {
             TRAINING MENU<span>01 — 04</span>
           </div>
           <nav aria-label="訓練メニュー" ref={navRef}>
-            {NAV.map((item, i) => (
-              <div key={item.id} className={i === 4 ? 'nav-section-break' : ''}>
-                {i === 4 && <div className="sidebar-section-label">FIELD RESOURCES</div>}
+            {NAV.map((item) => (
+              <div
+                key={item.id}
+                className={
+                  item.id === 'progress' || item.id === 'introduction' ? 'nav-section-break' : ''
+                }
+              >
+                {item.id === 'progress' && (
+                  <div className="sidebar-section-label">FIELD RESOURCES</div>
+                )}
+                {item.id === 'introduction' && (
+                  <div className="sidebar-section-label">GETTING STARTED</div>
+                )}
                 <button
                   className={`nav-item ${page === item.id ? 'active' : ''}`}
+                  data-tour={item.id === 'send' ? 'send-menu' : undefined}
                   aria-current={page === item.id ? 'page' : undefined}
+                  disabled={tourPending || tourActive || !preferences}
                   onClick={() => navigate(item.id)}
                 >
                   <Icon name={item.icon} size={17} />
@@ -146,6 +206,16 @@ function Station({ user, onLogout }: { user: User; onLogout: () => void }) {
                 </button>
               </div>
             ))}
+            <div>
+              <button
+                className="nav-item"
+                onClick={() => void startTour()}
+                disabled={tourPending || tourActive || !preferences}
+              >
+                <Icon name="target" size={17} />
+                <span>操作ガイド</span>
+              </button>
+            </div>
           </nav>
           <div className="daily-goal">
             <header>
@@ -185,13 +255,19 @@ function Station({ user, onLogout }: { user: User; onLogout: () => void }) {
             </div>
           </div>
         </aside>
-        <main className="training-main" id="main">
+        <main className="training-main" id="main" ref={mainRef} tabIndex={-1}>
           <div className="breadcrumb">
             <span>TRAINING GROUND</span>
             <Icon name="chevron" size={11} />
             <b>{NAV.find((item) => item.id === page)?.label}</b>
             <span className="breadcrumb-line" />
           </div>
+          {onboardingError && (
+            <div className="error workspace-error" role="alert">
+              {onboardingError}
+              <button onClick={() => void saveOnboardingSeen()}>表示済み状態の保存を再試行</button>
+            </div>
+          )}
           {error && (
             <div className="error workspace-error" role="alert">
               {error}
@@ -215,6 +291,13 @@ function Station({ user, onLogout }: { user: User; onLogout: () => void }) {
               <div className="loading-signal">· − ·</div>
               <p>訓練課題を準備しています…</p>
             </div>
+          ) : page === 'introduction' ? (
+            <Introduction
+              firstVisit={!preferences?.onboarding_seen}
+              onTour={() => void startTour()}
+              onSkip={() => navigate('send')}
+              busy={tourPending}
+            />
           ) : page === 'reference' ? (
             <Reference />
           ) : page === 'progress' && stats && preferences ? (
@@ -232,16 +315,18 @@ function Station({ user, onLogout }: { user: User; onLogout: () => void }) {
               onLive={setLiveSignal}
               loading={loading}
               targetAccuracy={preferences?.target_accuracy ?? 90}
+              paused={tourActive || tourPending}
             />
           ) : (
             !error && <div className="empty-state">メニューから訓練を選択してください。</div>
           )}
         </main>
         <Coach
-          exercise={page in MODE_LABELS && !loading ? exercise : null}
-          result={result}
-          liveSignal={liveSignal}
+          exercise={page in MODE_LABELS && !loading && !tourActive ? exercise : null}
+          result={page === 'introduction' || tourActive ? null : result}
+          liveSignal={tourActive ? '' : liveSignal}
           helpRequest={helpRequest}
+          introductory={page === 'introduction'}
         />
       </div>
       <footer className="station-footer">
@@ -251,6 +336,9 @@ function Station({ user, onLogout }: { user: User; onLogout: () => void }) {
         <span>PRECISION · RHYTHM · READINESS</span>
         <span>国際モールス / LATIN + NUMERIC</span>
       </footer>
+      {tourActive && exercise && !loading && (
+        <Walkthrough wpm={exercise.wpm} onEnd={endTour} onError={setError} />
+      )}
     </div>
   );
 }
