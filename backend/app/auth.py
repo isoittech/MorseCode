@@ -1,3 +1,5 @@
+import hashlib
+import hmac
 import ssl
 from urllib.parse import urlsplit
 
@@ -21,6 +23,21 @@ def authenticate(settings: Settings, username: str, password: str) -> dict:
     # Empty passwords may become anonymous binds on some directories.
     if not username.strip() or not password:
         raise AuthenticationFailed
+    username = username.strip()
+    if username == "admin" and settings.morse_auth_mode in {"local", "hybrid"}:
+        # This name belongs exclusively to the local account; never fall back to LDAP.
+        if not settings.admin_enabled or not hmac.compare_digest(
+            hashlib.sha256(password.encode()).digest(),
+            hashlib.sha256(settings.morse_admin_password.get_secret_value().encode()).digest(),
+        ):
+            raise AuthenticationFailed
+        return {"id": "local:admin", "username": "admin", "display_name": "admin", "demo": False}
+    if not settings.ldap_enabled:
+        raise AuthenticationFailed
+    return authenticate_ldap(settings, username, password)
+
+
+def authenticate_ldap(settings: Settings, username: str, password: str) -> dict:
     if settings.ldap_plaintext and not settings.ldap_allow_plaintext:
         raise DirectoryUnavailable("暗号化されていないLDAP接続は無効です")
     if not settings.ldap_user_search_base:
@@ -61,7 +78,9 @@ def authenticate(settings: Settings, username: str, password: str) -> dict:
         return conn
 
     try:
-        search_conn = bind(settings.ldap_bind_dn or None, settings.ldap_bind_credentials or None)
+        search_conn = bind(
+            settings.ldap_bind_dn or None, settings.ldap_bind_credentials.get_secret_value() or None
+        )
         filter_value = settings.ldap_search_filter.replace(
             "{{username}}", escape_filter_chars(username.strip())
         )

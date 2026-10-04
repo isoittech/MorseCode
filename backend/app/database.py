@@ -78,6 +78,10 @@ class Database:
         with self.connect() as db:
             db.execute("DELETE FROM sessions WHERE token_hash=?", (self.token_hash(token),))
 
+    def revoke_user_sessions(self, user_id: str):
+        with self.connect() as db:
+            db.execute("DELETE FROM sessions WHERE user_id=?", (user_id,))
+
     def preferences(self, user_id: str, value: dict | None = None) -> dict:
         with self.connect() as db:
             if value is not None:

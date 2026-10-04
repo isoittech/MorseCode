@@ -91,6 +91,43 @@ def test_empty_password_cannot_anonymously_authenticate():
     assert not FakeConnection.instances
 
 
+@pytest.mark.parametrize("mode", ["local", "hybrid"])
+def test_admin_uses_env_password_without_ldap_or_profile_secrets(mode):
+    config = settings(morse_auth_mode=mode, morse_admin_password="独立した管理者のパスワード123")
+    user = authenticate(config, " admin ", "独立した管理者のパスワード123")
+    assert user == {
+        "id": "local:admin",
+        "username": "admin",
+        "display_name": "admin",
+        "demo": False,
+    }
+    assert not FakeConnection.instances
+
+
+@pytest.mark.parametrize("password", ["", "wrong", "test-admin-password "])
+def test_admin_failure_never_falls_back_to_ldap(password):
+    config = settings(morse_admin_password="test-admin-password")
+    with pytest.raises(AuthenticationFailed):
+        authenticate(config, "admin", password)
+    assert not FakeConnection.instances
+
+
+def test_admin_has_no_default_password_and_local_mode_never_uses_ldap():
+    config = Settings(_env_file=None, morse_auth_mode="local", ldap_url="", ldap_search_filter="")
+    assert not config.admin_enabled
+    for username in ("admin", "tester"):
+        with pytest.raises(AuthenticationFailed):
+            authenticate(config, username, "test-admin-password")
+    assert not FakeConnection.instances
+
+
+def test_ldap_only_keeps_directory_authentication_for_admin_name():
+    config = settings(morse_auth_mode="ldap", morse_admin_password="local-password-disabled")
+    user = authenticate(config, "admin", "directory-password")
+    assert user["id"].startswith("ldap:")
+    assert len(FakeConnection.instances) == 2
+
+
 def test_wrong_password_and_unknown_user_are_rejected():
     FakeConnection.bind_ok = False
     with pytest.raises(AuthenticationFailed):

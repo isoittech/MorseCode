@@ -1,7 +1,7 @@
 [project]
 name = "morse-field-station"
 version = "0.1.0"
-description = "LDAP authenticated Morse training and Codex coaching"
+description = "Morse training with LDAP/local authentication and multi-provider AI coaching"
 requires-python = ">=3.12"
 dependencies = [
   "fastapi==0.142.2",
@@ -9,11 +9,14 @@ dependencies = [
   "pydantic-settings==2.15.0",
   "ldap3==2.9.1",
   "ag-ui-protocol==1.0.0",
+  "openai==3.24.0",
+  "anthropic==1.11.0",
+  "boto3==1.43.108",
+  "httpx2==2.13.1",
 ]
 
 [dependency-groups]
 dev = [
-    "httpx2==2.13.1",
     "pytest==9.1.1",
     "ruff==0.16.10",
 ]

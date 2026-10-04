@@ -162,6 +162,117 @@ def test_preferences_validate_and_control_next_exercise(client):
     assert "answer" not in exercise
 
 
+def test_local_admin_login_persists_settings_and_never_exposes_password(tmp_path):
+    password = "test-local-admin-password"
+    config = Settings(
+        _env_file=None,
+        morse_auth_mode="local",
+        morse_admin_password=password,
+        ldap_url="",
+        morse_database_path=tmp_path / "local.sqlite3",
+    )
+    with TestClient(create_app(config), headers=HEADERS) as client:
+        public = client.get("/api/auth/config")
+        assert public.json()["admin_enabled"] is True
+        assert public.json()["ldap_enabled"] is False
+        assert public.json()["plaintext"] is False
+        assert password not in public.text
+        assert (
+            client.post(
+                "/api/auth/login", json={"username": "admin", "password": "wrong"}
+            ).status_code
+            == 401
+        )
+        result = client.post("/api/auth/login", json={"username": "admin", "password": password})
+        assert result.status_code == 200
+        assert result.json()["id"] == "local:admin"
+        assert password not in result.text
+        assert "HttpOnly" in result.headers["set-cookie"]
+        client.put("/api/preferences", json={"wpm": 7})
+        client.post("/api/auth/logout")
+        assert client.get("/api/auth/me").status_code == 401
+        client.post("/api/auth/login", json={"username": "admin", "password": password})
+        assert client.get("/api/preferences").json()["wpm"] == 7
+        assert password not in config.morse_database_path.read_bytes().decode(errors="ignore")
+
+
+def test_cloud_provider_status_is_authenticated_and_does_not_expose_secrets(tmp_path):
+    secret = "fake-openai-key-never-return"
+    config = Settings(
+        _env_file=None,
+        morse_demo_enabled=True,
+        morse_ai_provider="openai",
+        openai_api_key=secret,
+        openai_model="test-model",
+        morse_database_path=tmp_path / "status.sqlite3",
+    )
+    with TestClient(create_app(config), headers=HEADERS) as client:
+        assert client.get("/api/coach/status").status_code == 401
+        login(client)
+        result = client.get("/api/coach/status")
+        assert result.json()["provider"] == "openai"
+        assert result.json()["available"] is True
+        assert secret not in result.text
+
+
+def test_admin_password_rotation_revokes_old_sessions_at_restart(tmp_path):
+    database_path = tmp_path / "rotation.sqlite3"
+    old_password, new_password = "old-admin-password", "new-admin-password"
+    old_config = Settings(
+        _env_file=None,
+        morse_auth_mode="local",
+        morse_admin_password=old_password,
+        morse_database_path=database_path,
+    )
+    with TestClient(create_app(old_config), headers=HEADERS) as first:
+        assert (
+            first.post(
+                "/api/auth/login", json={"username": "admin", "password": old_password}
+            ).status_code
+            == 200
+        )
+        token = first.cookies.get(COOKIE)
+        first.put("/api/preferences", json={"wpm": 9})
+    new_config = Settings(
+        _env_file=None,
+        morse_auth_mode="local",
+        morse_admin_password=new_password,
+        morse_database_path=database_path,
+    )
+    with TestClient(create_app(new_config), headers=HEADERS) as second:
+        second.cookies.set(COOKIE, token)
+        assert second.get("/api/auth/me").status_code == 401
+        assert (
+            second.post(
+                "/api/auth/login", json={"username": "admin", "password": old_password}
+            ).status_code
+            == 401
+        )
+        assert (
+            second.post(
+                "/api/auth/login", json={"username": "admin", "password": new_password}
+            ).status_code
+            == 200
+        )
+        assert second.get("/api/preferences").json()["wpm"] == 9
+
+
+def test_ldap_sessions_are_unusable_when_directory_login_is_disabled(tmp_path):
+    profile = {"id": "ldap:test", "username": "test", "display_name": "訓練生", "demo": False}
+    config = Settings(
+        _env_file=None,
+        morse_auth_mode="local",
+        morse_admin_password="local-admin-password",
+        morse_database_path=tmp_path / "disabled-ldap.sqlite3",
+    )
+    app = create_app(config)
+    token = app.state.database.login(profile)
+    with TestClient(app, headers=HEADERS) as client:
+        client.cookies.set(COOKIE, token)
+        assert client.get("/api/auth/me").status_code == 401
+        assert app.state.database.user(token) is None
+
+
 def test_onboarding_is_saved_per_user_without_resetting_training_preferences(client):
     login(client)
     first_session = client.cookies.get(COOKIE)

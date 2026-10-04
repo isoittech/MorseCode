@@ -5,7 +5,7 @@ import secrets
 import time
 import uuid
 from collections import defaultdict, deque
-from contextlib import asynccontextmanager
+from contextlib import aclosing, asynccontextmanager
 from urllib.parse import urlsplit
 
 from ag_ui.core import RunAgentInput
@@ -16,7 +16,8 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from . import auth
-from .coach import CoachUnavailable, CodexCoach
+from .ai_providers import CloudCoach, create_coach
+from .coach import CoachUnavailable
 from .config import ROOT, Settings
 from .database import Database
 from .training import Attempt, Mode, Preferences, grade, make_exercise, public_exercise
@@ -56,11 +57,18 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings or Settings()
     database = Database(settings.morse_database_path)
     limiter = RateLimiter()
-    coach = CodexCoach(settings)
+    coach = create_coach(settings)
 
     @asynccontextmanager
     async def lifespan(_app):
-        yield
+        # Environment changes take effect on restart; old admin credentials must not
+        # leave authenticated sessions behind after a password rotation or disable.
+        database.revoke_user_sessions("local:admin")
+        try:
+            yield
+        finally:
+            if isinstance(coach, CloudCoach):
+                await coach.aclose()
 
     app = FastAPI(title="Morse Field Station", lifespan=lifespan, docs_url=None, redoc_url=None)
     app.state.database = database
@@ -115,6 +123,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     def current_user(request: Request):
         user = database.user(request.cookies.get(COOKIE, ""))
+        if user and (
+            (user["id"] == "local:admin" and not settings.admin_enabled)
+            or (user["id"].startswith("ldap:") and not settings.ldap_enabled)
+        ):
+            database.logout(request.cookies.get(COOKIE, ""))
+            user = None
         if not user:
             raise HTTPException(401, "ログインが必要です")
         return user
@@ -139,7 +153,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def auth_config():
         return {
             "demo_enabled": settings.morse_demo_enabled,
-            "plaintext": settings.ldap_plaintext,
+            "ldap_enabled": settings.ldap_enabled,
+            "admin_enabled": settings.admin_enabled,
+            "plaintext": settings.ldap_enabled and settings.ldap_plaintext,
             "notice_emphasis_until": settings.ldap_login_notice_emphasis_until,
         }
 
@@ -262,8 +278,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             try:
                 yield event("RUN_STARTED", threadId=payload.thread_id, runId=payload.run_id)
                 yield event("TEXT_MESSAGE_START", messageId=message_id, role="assistant")
-                async for delta in app.state.coach.stream(prompt):
-                    yield event("TEXT_MESSAGE_CONTENT", messageId=message_id, delta=delta)
+                async with aclosing(app.state.coach.stream(prompt)) as stream:
+                    async for delta in stream:
+                        yield event("TEXT_MESSAGE_CONTENT", messageId=message_id, delta=delta)
                 yield event("TEXT_MESSAGE_END", messageId=message_id)
                 yield event("RUN_FINISHED", threadId=payload.thread_id, runId=payload.run_id)
             except CoachUnavailable as exc:

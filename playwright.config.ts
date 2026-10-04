@@ -15,7 +15,13 @@ export default defineConfig({
     command: 'uv run uvicorn backend.app.main:app --host 127.0.0.1 --port 17632 --no-proxy-headers',
     url: 'http://127.0.0.1:17632/api/health',
     reuseExistingServer: false,
-    env: { MORSE_DEMO_ENABLED: 'true', MORSE_DATABASE_PATH: '.local/e2e.sqlite3' },
+    env: {
+      MORSE_DEMO_ENABLED: 'true',
+      MORSE_DATABASE_PATH: '.local/e2e.sqlite3',
+      MORSE_AUTH_MODE: 'hybrid',
+      MORSE_ADMIN_PASSWORD: 'e2e-only-admin-password',
+      MORSE_AI_PROVIDER: 'codex',
+    },
     timeout: 20_000,
   },
 });

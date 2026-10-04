@@ -7,6 +7,14 @@ import { decode } from '../lib/morse';
 import type { Exercise, Result } from '../types';
 import { Icon } from './Icon';
 
+const PROVIDERS: Record<string, string> = {
+  'codex-app-server': 'Codex',
+  openai: 'OpenAI',
+  azure: 'Azure OpenAI',
+  bedrock: 'Amazon Bedrock',
+  anthropic: 'Anthropic',
+};
+
 export function CoachProvider({ children }: { children: ReactNode }) {
   const [context] = useState(() => {
     const coach = new HttpAgent({
@@ -62,6 +70,7 @@ export function Coach({
   const [autoReview, setAutoReview] = useState(true);
   const [status, setStatus] = useState<'checking' | 'ready' | 'unavailable'>('checking');
   const [sending, setSending] = useState(false);
+  const [provider, setProvider] = useState('');
   const automaticIds = useRef(new Set<string>());
   const autoMessages = useRef(new Set<string>());
   const liveReview = useRef({ exercise: '', lastAt: 0 });
@@ -84,8 +93,11 @@ export function Coach({
   });
 
   useEffect(() => {
-    void api<{ available: boolean }>('/coach/status')
-      .then((s) => setStatus(s.available ? 'ready' : 'unavailable'))
+    void api<{ available: boolean; provider: string }>('/coach/status')
+      .then((s) => {
+        setStatus(s.available ? 'ready' : 'unavailable');
+        setProvider(PROVIDERS[s.provider] ?? '');
+      })
       .catch(() => setStatus('unavailable'));
   }, []);
   useEffect(() => {
@@ -191,7 +203,7 @@ export function Coach({
         </div>
         <div>
           <b>通信教官</b>
-          <span>AI TRAINING COACH</span>
+          <span>{provider ? `${provider} / AI COACH` : 'AI TRAINING COACH'}</span>
         </div>
         <span
           className={`coach-status ${status}`}

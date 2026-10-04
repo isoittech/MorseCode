@@ -1,20 +1,20 @@
 # MORSE / FIELD STATION
 
-LDAP 認証付きのモールス信号訓練 Web アプリ。陸軍色の3カラム画面で、送信・受信・知識・判断を練習し、AI コーチから具体的な指導を受けられます。
+LDAP・固定admin認証に対応したモールス信号訓練 Web アプリ。陸軍色の3カラム画面で、送信・受信・知識・判断を練習し、AI コーチから具体的な指導を受けられます。AI接続先はCodex App Server、OpenAI、Azure OpenAI、Amazon Bedrock、Anthropicから選択できます。
 
 ## 起動
 
-必要環境：Linux、Python 3.12 以上、Node.js 22.16 以上、uv、pnpm、ログイン済みの Codex CLI。Codex CLI 0.154.0 で接続確認しています。
+必要環境：Linux、Python 3.12 以上、Node.js 22.16 以上、uv、pnpm。AI接続先としてCodexを選ぶ場合はログイン済みのCodex CLI、クラウドAPIを選ぶ場合はそのサービスの認証情報と利用可能なモデルが必要です。Codex CLI 0.154.0 で接続確認しています。
 
 ```bash
 uv sync --locked
 pnpm install --frozen-lockfile
 ```
 
-初回の別環境への導入時は `.env.example` を `.env` にコピーし、LDAP 接続値を設定してください。既存の `.env` は上書きしないでください。`.env`、認証状態、DB、ログは Git 管理対象外です。
+初回の別環境への導入時は `.env.example` を `.env` にコピーし、認証方式とAI接続先を設定してください。LDAPなしで始める場合は `MORSE_AUTH_MODE=local` と `MORSE_ADMIN_PASSWORD` を設定します。既存の `.env` は上書きしないでください。`.env`、認証状態、DB、ログは Git 管理対象外です。
 
 ```bash
-codex login status
+codex login status # MORSE_AI_PROVIDER=codex の場合のみ
 pnpm build
 pnpm start
 pnpm status
@@ -58,6 +58,17 @@ WSL2 の NAT 環境で LAN に公開する場合は、アプリ起動後、Windo
 
 | 変数 | 意味 |
 | --- | --- |
+| `MORSE_AUTH_MODE` | `hybrid`（既定）：LDAPとadminを併用。`ldap`：LDAPのみ。`local`：adminのみ |
+| `MORSE_ADMIN_PASSWORD` | 固定ユーザー`admin`のパスワード。12〜1024文字。空の場合はadminログインを無効化 |
+
+adminは `.env` のパスワードでログインします。既定のパスワードはありません。`local`・`hybrid`ではユーザー名`admin`を固定アカウント専用として扱い、パスワードが違っていてもLDAPへフォールバックしません。LDAPの同名ユーザーは`ldap`モードで認証できます。
+
+adminの成績と設定は `local:admin` として保存し、LDAPのユーザーとは分離します。パスワードはDB・API応答・AIコンテキストには保存しません。`.env` の変更後はアプリを再起動してください。**再起動するとadminの既存セッションは失効**し、変更後のパスワードでログインし直します。成績・設定は残ります。LDAPを無効にした場合は、既存のLDAPセッションも利用できません。
+
+`local`ではLDAPへの接続とLDAP設定の検証を行いません。LDAPを利用する場合は、以下を設定してください。
+
+| 変数 | 意味 |
+| --- | --- |
 | `LDAP_URL` | `ldap://` または `ldaps://` の接続先 |
 | `LDAP_BIND_DN` / `LDAP_BIND_CREDENTIALS` | 検索用アカウント。両方空なら匿名検索 |
 | `LDAP_USER_SEARCH_BASE` | 検索対象のベース DN |
@@ -81,7 +92,31 @@ WSL2 の NAT 環境で LAN に公開する場合は、アプリ起動後、Windo
 
 ## AI コーチの接続
 
-React の CopilotKit headless API → AG-UI SSE → FastAPI → Codex App Server の stdio JSON-RPC という構成です。OpenAI API キーをブラウザーへ渡しません。Codex が使えるアカウントで実行ホスト側の `codex login` を済ませてください。
+React の CopilotKit headless API → AG-UI SSE → FastAPI → 選択したAI接続先、という構成です。`.env` の `MORSE_AI_PROVIDER` でサーバー全体の接続先を選び、変更後に再起動します。接続先名はコーチ欄に表示します。APIキーやAWS認証情報をブラウザーへ渡しません。
+
+| `MORSE_AI_PROVIDER` | 接続方式 | 必要な設定 |
+| --- | --- | --- |
+| `codex`（既定） | Codex App Server / stdio JSON-RPC | ログイン済みCodex CLI。下表の`CODEX_*` |
+| `openai` | OpenAI Responses API | `OPENAI_API_KEY`、`OPENAI_MODEL` |
+| `azure` | Azure OpenAI v1 Responses API | `AZURE_OPENAI_API_KEY`、`AZURE_OPENAI_ENDPOINT`、`AZURE_OPENAI_DEPLOYMENT` |
+| `anthropic` | Anthropic Messages API | `ANTHROPIC_API_KEY`、`ANTHROPIC_MODEL` |
+| `bedrock` | Amazon Bedrock ConverseStream | `BEDROCK_MODEL_ID`、AWSのリージョンと認証情報 |
+
+OpenAIにはResponses API対応モデルを指定します。Azureにはモデル名ではなく**デプロイ名**を指定します。AzureのエンドポイントはHTTPSのリソースURL、または末尾が`/openai/v1/`のURLです。v1接続ではAPIバージョン指定は不要です。方式は[OpenAIのストリーミング仕様](https://developers.openai.com/api/docs/guides/streaming-responses)と[AzureのResponses API仕様](https://learn.microsoft.com/en-us/azure/foundry/openai/how-to/responses)に沿っています。
+
+AnthropicはMessages APIのストリーミングを使います。BedrockにはConverseStreamとsystemプロンプトに対応するモデルID、または推論プロファイルのID/ARNを指定します。`AWS_REGION`（または`AWS_DEFAULT_REGION`）と、`AWS_PROFILE`・IAMロール・標準AWS認証情報チェーンのいずれかを使用できます。`.env`で指定する場合は`AWS_ACCESS_KEY_ID`と`AWS_SECRET_ACCESS_KEY`を組で設定し、一時認証情報には`AWS_SESSION_TOKEN`も設定します。Bedrockには`bedrock:InvokeModelWithResponseStream`権限と対象モデルへのアクセスが必要です。[Anthropic SDK](https://platform.claude.com/docs/en/cli-sdks-libraries/sdks/python)、[Bedrock ConverseStream](https://docs.aws.amazon.com/bedrock/latest/APIReference/API_runtime_ConverseStream.html)
+
+クラウドAPIの共通設定は以下です。モデルIDはアカウント・リージョンで利用できるものを明示してください。接続失敗時に別のサービスへ自動で切り替えることはありません。
+
+| 変数 | 意味 |
+| --- | --- |
+| `MORSE_AI_TIMEOUT_SECONDS` | 応答全体の時間上限。既定90秒 |
+| `MORSE_AI_MAX_CONCURRENT` | 同時応答数。既定2 |
+| `MORSE_AI_MAX_OUTPUT_TOKENS` | 応答トークン上限。既定2048。推論にトークンを使うモデルでは必要に応じて増やす |
+
+各SDKは接続開始時の一時的な失敗を最大1回再試行します。ストリームの途中切断・出力上限到達はエラーとして通知し、正常終了として扱いません。実際の認証とモデル利用可否は最初の相談時に確認します。APIキー未設定でも送受信訓練や採点は利用できます。
+
+Codexを選ぶ場合は、Codexが使えるアカウントで実行ホスト側の `codex login` を済ませてください。Codexには次の設定を使います。
 
 | 変数 | 意味 |
 | --- | --- |
@@ -97,7 +132,7 @@ React の CopilotKit headless API → AG-UI SSE → FastAPI → Codex App Server
 CODEX_HOME="$PWD/.local/coach-codex" codex login
 ```
 
-応答ごとに新しい ephemeral thread を作り、直近の会話と練習結果を渡します。シェル、複数エージェント、Apps、Web検索を無効にし、read-only モードで起動します。サーバーからのツール実行・承認要求も拒否します。LDAPの認証情報・ユーザーID・表示名を学習コンテキストへ含めません。手入力したチャットと練習情報は、回答を生成するためCodexへ送られます。
+Codexでは応答ごとに新しい ephemeral thread を作り、直近の会話と練習結果を渡します。シェル、複数エージェント、Apps、Web検索を無効にし、read-only モードで起動します。サーバーからのツール実行・承認要求も拒否します。クラウドAPIもツールを提供しないテキスト応答専用です。すべての接続先で、認証情報・ユーザーID・表示名を学習コンテキストへ含めません。手入力したチャットと練習情報は、回答を生成するため**選択したAI接続先**へ送られます。
 
 AI の自然言語応答にはネットワーク・推論の待ち時間があります。符号判定と長短点の測定はブラウザーで即時実行し、AI が接続できない間も練習と採点は続行できます。チャット履歴は現在の画面内で保持され、再読み込みするとリセットされます。成績はDBに残ります。
 
@@ -118,7 +153,7 @@ pnpm test:e2e
 pnpm audit --prod --audit-level high
 ```
 
-自動テストでは、LDAP の検索・DN bind・TLS・認証失敗、セッション・CSRF・所有者分離、採点・保存、Codex JSON-RPC、AG-UI ストリーム、実際のブラウザー打鍵・受信音・画面遷移・モバイル表示を検証します。入門のE・T・Aの実打鍵、案内のユーザー別保存と保存失敗時の継続、Joyrideの全ステップ・戻る・スキップ・再表示・Esc終了も確認します。LDAP の実アカウント認証はアカウント入力後に確認してください。AI を使う E2E は決定的な AG-UI 応答で検証し、実 Codex 接続は別途確認します。
+自動テストでは、LDAP の検索・DN bind・TLS・認証失敗、固定adminの認証・再起動時の失効、セッション・CSRF・所有者分離、採点・保存、Codex JSON-RPC、AG-UI ストリーム、実際のブラウザー打鍵・受信音・画面遷移・モバイル表示を検証します。入門のE・T・Aの実打鍵、案内のユーザー別保存と保存失敗時の継続、Joyrideの全ステップ・戻る・スキップ・再表示・Esc終了も確認します。クラウド接続は実SDKとHTTPモック・Bedrockストリームモックを用いて、送信形式、認証エラー、途中切断、タイムアウト、取消とリソース回収を検証します。各社APIの実接続は利用するアカウントの認証情報・モデル設定後に確認してください。AI を使う E2E は決定的な AG-UI 応答で検証し、実 Codex 接続は別途確認します。
 
 `ldap3 2.9.1` 内部から `pyasn1` の旧属性名に関する非推奨警告が2件出ます。第三者パッケージ由来で、抑制はしていません。認証・TLS テストは通ります。`hast` の非推奨通知は CopilotKit の間接依存です。不要な `@scarf/scarf` インストール時スクリプトは実行しません。
 
@@ -126,7 +161,7 @@ pnpm audit --prod --audit-level high
 
 ```text
 frontend/src/       Reactの画面、打鍵フック、Web Audio、CopilotKit
-backend/app/        FastAPI、LDAP、SQLite、採点、Codex接続
+backend/app/        FastAPI、LDAP・admin認証、SQLite、採点、AI接続
 shared/            フロント・バック共通の符号表と課題データ
 backend/tests/     Pythonテスト
 e2e/               Playwrightブラウザーテスト

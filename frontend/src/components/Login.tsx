@@ -6,6 +6,8 @@ import { Icon } from './Icon';
 export function Login({ onLogin, expired }: { onLogin: (user: User) => void; expired: boolean }) {
   const [config, setConfig] = useState<{
     demo_enabled: boolean;
+    ldap_enabled: boolean;
+    admin_enabled: boolean;
     plaintext: boolean;
     notice_emphasis_until: string;
   }>();
@@ -49,6 +51,16 @@ export function Login({ onLogin, expired }: { onLogin: (user: User) => void; exp
   }
   const emphasized =
     config?.notice_emphasis_until && Date.now() <= Date.parse(config.notice_emphasis_until);
+  const loginAvailable = config?.ldap_enabled || config?.admin_enabled;
+  const loginDescription = config?.ldap_enabled
+    ? config.admin_enabled
+      ? '組織のアカウント、または admin でログインしてください。'
+      : '組織のアカウントでログインしてください。'
+    : config?.admin_enabled
+      ? 'ユーザー名 admin と、設定されたパスワードでログインしてください。'
+      : config
+        ? '管理者にログイン方法の設定を確認してください。'
+        : '認証の設定を確認しています。';
   return (
     <div className="login-page">
       <header className="login-top">
@@ -114,7 +126,12 @@ export function Login({ onLogin, expired }: { onLogin: (user: User) => void; exp
             <span className="tiny-dot" />
           </div>
           <h2>訓練ステーションに入室</h2>
-          <p>組織のアカウントでログインしてください。</p>
+          <p>{loginDescription}</p>
+          {config && !loginAvailable && (
+            <p className="notice" role="status">
+              ログイン方法が設定されていません。管理者に確認してください。
+            </p>
+          )}
           {expired && (
             <p className="notice" role="status">
               セッションが終了しました。もう一度ログインしてください。
@@ -128,7 +145,7 @@ export function Login({ onLogin, expired }: { onLogin: (user: User) => void; exp
                 autoComplete="username"
                 required
                 maxLength={128}
-                placeholder="ユーザー名を入力"
+                placeholder={config?.ldap_enabled ? 'ユーザー名を入力' : 'admin'}
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
               />
@@ -151,7 +168,7 @@ export function Login({ onLogin, expired }: { onLogin: (user: User) => void; exp
                 {error}
               </p>
             )}
-            <button className="button primary login-button" disabled={busy || !config}>
+            <button className="button primary login-button" disabled={busy || !loginAvailable}>
               {busy ? '認証中…' : 'ログインして訓練を開始'}
               <Icon name="arrow" size={16} />
             </button>
@@ -174,7 +191,17 @@ export function Login({ onLogin, expired }: { onLogin: (user: User) => void; exp
             </div>
           )}
           <footer>
-            <span className="status-dot" /> 組織アカウント認証<span>LDAP</span>
+            <span className="status-dot" />
+            アカウント認証
+            <span>
+              {config?.ldap_enabled && config?.admin_enabled
+                ? 'LDAP + LOCAL'
+                : config?.ldap_enabled
+                  ? 'LDAP'
+                  : config?.admin_enabled
+                    ? 'LOCAL'
+                    : '未設定'}
+            </span>
           </footer>
         </section>
       </main>
